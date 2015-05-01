@@ -23,7 +23,6 @@ def extract_data (received_packet):
   #convert received_packet, which is a string of a tuple back to actual tuple
   received_tuple = string.split(received_packet, ',')
   j = 0
-  
   for i in received_tuple:
     i = string.strip(i, '(')
     i = string.strip(i, ')')
@@ -31,7 +30,6 @@ def extract_data (received_packet):
     i = string.strip (i, '\'')
     received_tuple[j] = i
     j = j + 1
-  check = ip_checksum(received_tuple[1])
   #print type(check)
   #print 'checksum is', check, str(received_tuple[2])
   #uni = '\x97\x96'
@@ -44,7 +42,29 @@ def extract_data (received_packet):
   check_sum = received_tuple[2]
   return seq_num, data, check_sum
 
- 
+#################################
+#checksum cmp
+#################################
+def checksum_cmp (received_content, received_checksum):
+  #casting checksum to str by itself is not the same when casting it to str via tuple...
+  #when checksum is in tuple and is cast into a string, they are the same
+  check = ip_checksum(received_content)
+  tuple_pkt = (0,0, check)
+  tuple_pkt_str = str(tuple_pkt)
+  splice_tuple_pkt = string.split(tuple_pkt_str, ',')
+  j = 0
+  for i in splice_tuple_pkt:
+    i = string.strip(i, '(')
+    i = string.strip(i, ')')
+    i = string.strip (i) #by default it removes whitespace
+    i = string.strip (i, '\'')
+    splice_tuple_pkt[j] = i
+    j = j + 1
+  if splice_tuple_pkt[2] == received_checksum:
+    return 1
+  else:
+    return 0
+
 HOST = ''   # Symbolic name meaning all available interfaces
 PORT = 7109 # Arbitrary non-privileged port
 packet_sequence_number = 0
@@ -72,7 +92,7 @@ states_list = list(enumerate(states))
 current_state = states_list[0]
 
 delay_ack1 = 1
-packet1_corrput = 0
+#packet1_corrput = 0
 
 #now keep talking with the client
 while 1:
@@ -96,7 +116,7 @@ while 1:
         packet_to_send = make_packet ('1', 'ACK1', checksum)
         #send packet
         s.sendto(str(packet_to_send), address)
-      elif packet_sequence_number == '0':
+      elif packet_sequence_number == '0' and checksum_cmp(packet_data, packet_checksum):
         # we have already extracted the data
         '''
         This is were we would forward the data up the internet protocl stack to 
@@ -110,7 +130,8 @@ while 1:
         s.sendto(str(packet_to_send), address)
         #change current state to wait for 1
         current_state = states_list[1]
-        
+      if not(checksum_cmp(packet_data, packet_checksum)):
+          print 'Received corrupted packet, wait for retransmission from sender.'
   elif current_state == states_list[1]:
     inputs = [s] #socket
     outputs = []
@@ -133,7 +154,7 @@ while 1:
         #send packet
         s.sendto(str(packet_to_send), address)
         
-      elif packet_sequence_number == '1':
+      elif packet_sequence_number == '1' and checksum_cmp(packet_data, packet_checksum):
         # we have already extracted the data
         '''
         This is were we would forward the data up the internet protocl stack to 
@@ -146,19 +167,22 @@ while 1:
         #send packet
         if delay_ack1:
           delay_ack1 = 0
-          packet1_corrput = 1
+          #packet1_corrput = 1
           inputs = [s] #socket
           outputs = []
           timeout = 6 #this timeout must be longer than on sender side
           readable, writeable, expectional = select.select(inputs, outputs, inputs, timeout)
+        '''
         elif packet1_corrput:
           print 'packet is corrupt, wait for retransmission'
           packet1_corrput = 0
           continue
+        '''
         s.sendto(str(packet_to_send), address)
         #change current state to wait for 0
         current_state = states_list[0]
-        
+      elif not(checksum_cmp(packet_data, packet_checksum)):
+          print 'Received corrupted packet, wait for retransmission from sender.'
   else:
     print 'Something went wrong! Current state is', current_state
     break;
