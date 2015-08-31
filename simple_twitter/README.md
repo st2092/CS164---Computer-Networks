@@ -1,4 +1,4 @@
-__Simple Twitter__
+#Simple Twitter
 
 Client Side:
 
